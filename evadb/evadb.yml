@@ -23,6 +23,7 @@ server:
 experimental:
   ray: False
   use_postgres_backend: False
+  use_duckdb_backend: True
 
 postgres:
   pg_user: "postgres"

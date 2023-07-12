@@ -68,20 +68,24 @@ class SQLConfig(metaclass=SingletonMeta):
 
         connect_args = {}
         config_obj = parse_config_yml()
-        if config_obj["experimental"]["use_postgres_backend"] is False:
-            # Default to SQLite.
-            connect_args = {"timeout": 1000}
-            self.engine = create_engine(
-                self.worker_uri,
-                connect_args=connect_args,
-            )
-        else:
+        if config_obj["experimental"]["use_postgres_backend"] is True:
             connect_args = {"connect_timeout": 1000}
             # https://www.oddbird.net/2014/06/14/sqlalchemy-postgres-autocommit/
             self.engine = create_engine(
                 self.worker_uri,
                 poolclass=NullPool,
                 isolation_level="AUTOCOMMIT",
+                connect_args=connect_args,
+            )
+        elif config_obj["experimental"]["use_duckdb_backend"] is True:
+            self.engine = create_engine(
+                self.worker_uri,
+            )            
+        else:
+            # Default to SQLite.
+            connect_args = {"timeout": 1000}
+            self.engine = create_engine(
+                self.worker_uri,
                 connect_args=connect_args,
             )
 

@@ -15,7 +15,7 @@
 import contextlib
 
 import sqlalchemy
-from sqlalchemy import Column, Integer
+from sqlalchemy import Column, Integer, Sequence, MetaData
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.declarative import declarative_base
@@ -23,6 +23,7 @@ from sqlalchemy_utils import create_database, database_exists
 
 from evadb.catalog.sql_config import CATALOG_TABLES
 from evadb.utils.logging_manager import logger
+from evadb.utils.generic_utils import parse_config_yml
 
 
 class CustomModel:
@@ -34,10 +35,28 @@ class CustomModel:
     Declares and int `_row_id` field for all tables
     """
 
+    _row_id_counter = 1
     _row_id = Column("_row_id", Integer, primary_key=True)
+    md = MetaData()
+    if parse_config_yml()["experimental"]["use_duckdb_backend"] is True:
+    #     # When an integer column is defined as a primary key, SQLAlchemy uses PostgreSQL' SERIAL datatype.
+    #     # Since Duckdb does not yet support this, we use the SQLAlchemy.Sequence() object to auto-increment the key.
+        row_id_seq = Sequence(f"row_id_seq_{_row_id_counter}", start=1)
+        # _row_id = Column("_row_id", Integer, Identity(start = 1, cycle=True), primary_key=True) 
+        _row_id = Column("_row_id", Integer, row_id_seq, server_default=row_id_seq.next_value(), primary_key=True)
+        _row_id_counter += 1
+        # _row_id = Column("_row_id", Integer, primary_key=True, autoincrement=False)
 
     def __init__(self, **kwargs):
         cls_ = type(self)
+        # if parse_config_yml()["experimental"]["use_duckdb_backend"] is True:
+        #     CustomModel._row_id_counter += 1
+        # #     # When an integer column is defined as a primary key, SQLAlchemy uses PostgreSQL' SERIAL datatype.
+        # #     # Since Duckdb does not yet support this, we use the SQLAlchemy.Sequence() object to auto-increment the key.
+        #     row_id_seq = Sequence(f"row_id_seq_{CustomModel._row_id_counter}")
+        # #     _row_id = Column("_row_id", Integer, row_id_seq, primary_key=True)
+        #     CustomModel._row_id = Column("_row_id", Integer, row_id_seq, server_default=row_id_seq.next_value(), primary_key=True)
+        #     # _row_id = Column("_row_id", Integer, primary_key=True, autoincrement=False)
         for k in kwargs:
             if hasattr(cls_, k):
                 setattr(self, k, kwargs[k])

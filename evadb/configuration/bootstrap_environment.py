@@ -22,6 +22,7 @@ import yaml
 from evadb.configuration.constants import (
     CACHE_DIR,
     DB_DEFAULT_NAME,
+    DUCKDB_DEFAULT_NAME,
     INDEX_DIR,
     PG_DB_DEFAULT_NAME,
     S3_DOWNLOAD_DIR,
@@ -55,9 +56,9 @@ def get_default_db_uri(evadb_dir: Path):
         evadb_dir: path to evadb database directory
     """
     config_obj = parse_config_yml()
-    if config_obj["experimental"]["use_postgres_backend"] is False:
-        return f"sqlite:///{evadb_dir.resolve()}/{DB_DEFAULT_NAME}"
-    else:
+    if config_obj["experimental"]["use_duckdb_backend"] is True:
+        return f"duckdb:///{evadb_dir.resolve()}/{DUCKDB_DEFAULT_NAME}" 
+    elif config_obj["experimental"]["use_postgres_backend"] is True:
         # Custom Postgres server arguments need to be set in the evadb.yml file
         pg_host = config_obj["postgres"]["pg_host"]
         pg_port = config_obj["postgres"]["pg_port"]
@@ -69,6 +70,10 @@ def get_default_db_uri(evadb_dir: Path):
         else:
             # Include the password in the db_uri.
             return f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{PG_DB_DEFAULT_NAME}"
+    else:
+        # Default to SQLite
+        return f"sqlite:///{evadb_dir.resolve()}/{DB_DEFAULT_NAME}"
+
 
 
 def bootstrap_environment(evadb_dir: Path, evadb_installation_dir: Path):
@@ -152,13 +157,15 @@ def merge_dict_of_dicts(dict1, dict2):
     merged_dict = dict1.copy()
 
     for key, value in dict2.items():
-        if (
-            key in merged_dict
-            and isinstance(merged_dict[key], dict)
-            and isinstance(value, dict)
-        ):
-            merged_dict[key] = merge_dict_of_dicts(merged_dict[key], value)
-        else:
-            merged_dict[key] = value
+        # Only overwrite is some value is set.
+        if value:
+            if (
+                key in merged_dict
+                and isinstance(merged_dict[key], dict)
+                and isinstance(value, dict)
+            ):
+                merged_dict[key] = merge_dict_of_dicts(merged_dict[key], value)
+            else:
+                merged_dict[key] = value
 
     return merged_dict
