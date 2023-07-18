@@ -103,6 +103,7 @@ class SQLConfig(metaclass=SingletonMeta):
                 # better management.
                 # dbapi_con.execute("pragma journal_mode=WAL")
 
+
             event.listen(self.engine, "connect", _enable_sqlite_pragma)
         # statements
         self.session = scoped_session(sessionmaker(bind=self.engine))

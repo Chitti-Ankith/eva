@@ -25,6 +25,11 @@ from evadb.catalog.sql_config import CATALOG_TABLES
 from evadb.utils.logging_manager import logger
 from evadb.utils.generic_utils import parse_config_yml
 
+_row_id_counter = 1
+def mydefault():
+    global _row_id_counter
+    _row_id_counter += 1
+    return _row_id_counter
 
 class CustomModel:
     """This overrides the default `_declarative_constructor` constructor.
@@ -35,16 +40,16 @@ class CustomModel:
     Declares and int `_row_id` field for all tables
     """
 
-    _row_id_counter = 1
     _row_id = Column("_row_id", Integer, primary_key=True)
     md = MetaData()
     if parse_config_yml()["experimental"]["use_duckdb_backend"] is True:
     #     # When an integer column is defined as a primary key, SQLAlchemy uses PostgreSQL' SERIAL datatype.
     #     # Since Duckdb does not yet support this, we use the SQLAlchemy.Sequence() object to auto-increment the key.
-        row_id_seq = Sequence(f"row_id_seq_{_row_id_counter}", start=1)
-        # _row_id = Column("_row_id", Integer, Identity(start = 1, cycle=True), primary_key=True) 
-        _row_id = Column("_row_id", Integer, row_id_seq, server_default=row_id_seq.next_value(), primary_key=True)
-        _row_id_counter += 1
+        row_id_seq = Sequence(f"row_id_seq_{_row_id_counter}")
+        # _row_id = Column("_row_id", Integer, Sequence('row_id_seq', start = 1), server_default=row_id_seq.next_value(), primary_key=True)
+        # _row_id = Column("_row_id", Integer, Sequence('row_id_seq', start = 1), primary_key=True)
+        _row_id = Column("_row_id", Integer, primary_key=True, default=mydefault)
+        # _row_id_counter += 1
         # _row_id = Column("_row_id", Integer, primary_key=True, autoincrement=False)
 
     def __init__(self, **kwargs):
