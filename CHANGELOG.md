@@ -10,6 +10,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### [Deprecated]
 ### [Removed]
 
+##  [0.3.7] - 2023-09-30
+
+* PR #1239: release 0.3.7 
+* PR #1238: Revert "add stable diffusion integration" 
+* PR #1111: add stable diffusion integration 
+* PR #1228: fix: improve messaging and fix bugs 
+* PR #1230: Force fresh .testmondata cache 
+* PR #1229: Fix staging CI setup 
+* PR #1225: fix: merging dataframes with None value 
+* PR #1223: fix: native db bugs 
+* PR #1209: feat: add testmon in pytest 
+* PR #1201: Improve Documentation For Model Training 
+* PR #1210: chore
+* PR #1212: fix: 1199 enhance similarity search test to make index is used 
+* PR #1211: fix: evadb_client fails on launch 
+* PR #1203: fix: chatgpt exact cache 
+* PR #1208: fix: if create table fails, we were not cleaning the entry in catalog 
+* PR #1204: feat: print error msg if creating built-in functions failed 
+* PR #1180: Adding SET statement for configuration management 
+* PR #1198: Chroma vector store 
+* PR #1162: Adding support for Sklearn linear regression in EvaDB 
+* PR #1196: bug: fix links in model training notebook 
+* PR #1167: Model training Colab Notebook 
+* PR #1185: Add support for function calls without input arguments: `FUNC
+* PR #1192: Skip pinecone test if pinecone is not installed 
+* PR #1191: fix: unclosed file error 
+* PR #1190: fix: release change log 
+* PR #1153: feat: integrate with pgvector 
+* PR #1135: Pinecone vector store 
+* PR #1165: bug: drop bug fix 
+* PR #1168: LLM app fixes 
+* PR #1182: Bump Version to v0.3.7+dev 
+* PR #1181: releass: bump a version further to skip cached wheel 
+
+##  [0.3.6] - 2023-09-21
+
+* PR #1181: releass: bump a version further to skip cached wheel 
+* PR #1179: fix: release change log 
+* PR #1177: fix: release action 
+* PR #1176: fix: release 
+* PR #1174: fix: trigger build 
+* PR #1173: fix: release on success only and credential to pass protection rule 
+* PR #1172: Release v0.3.5 
+* PR #1169: fix: hotfix for the failing staging build 
+* PR #1159: Load query exception for invalid file format  
+* PR #1164: Fix model train with Ludwig on Colab 
+* PR #1155: feat: add support for enabling ORDER BY on non projected columns 
+* PR #1158: Adding Algolia search to Eva-DB Docs 
+* PR #1146: `CREATE OR REPLACE FUNCTION` 
+* PR #1154: feat: add github actions to sync and release wheel 
+* PR #1123: Updates evadb apps 
+* PR #1157: chore
+* PR #977: chore
+* PR #1137: feat: add support for if not exists in create db  
+* PR #1132: docs: add home sale forecast usecase into documentation 
+* PR #1136: feat: support order by using the projection columns 
+* PR #1030: Add model inference documentation 
+* PR #1134: ci: staging build fix 
+* PR #1124: fix: third-party test 
+* PR #1118: Add a model forecasting notebook in tutorials 
+* PR #1125: feat: create table in integration table from evadb select query 
+* PR #1122: fix: flaky ci unit tests 
+* PR #1113: fix: update docs and notebooks 
+* PR #1114: feat: Improve db integration 
+* PR #1108: Set the right output column type for forecast functions 
+* PR #1107: Added null handling and tests for case insensitive string matching 
+* PR #1087: Support `SELECT expr;` which does not require `FROM table`  
+* PR #1090: Making `Ludwig` and `HuggingFace` case insensitive 
+* PR #1027: Adding support for MariaDb as backend for EvaDB 
+* PR #1101: Fix forecasting integration test 
+* PR #1094: Fixes date and frequency issues in forecasting 
+* PR #1096: Rename l_plan and p_plan 
+* PR #1091: fix: evadb is now consistent with lowercase 
+* PR #1092: feat: Drop database 
+* PR #1082: feat: create index if exists 
+* PR #1088: fix: df merging issues when multiple predicates  
+* PR #1086: Update parameters documentation for forecast 
+* PR #1084: Fix column name related issue for Forecast functions 
+* PR #1073: fix: create index from single document 
+* PR #1080: `pandas.DataFrame.fillna` is deprecated 
+* PR #1060: Bump v0.3.5+dev 
+* PR #1062: Update UDF to function in model-forecasting.rst 
+
 ##  [0.3.4] - 2023-09-06
 
 * PR #1057: fix: staging build fix 

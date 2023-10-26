@@ -25,6 +25,7 @@ from evadb.catalog.models.function_catalog import FunctionCatalogEntry
 from evadb.catalog.models.function_io_catalog import FunctionIOCatalogEntry
 from evadb.catalog.models.function_metadata_catalog import FunctionMetadataCatalogEntry
 from evadb.configuration.constants import (
+    DEFAULT_TRAIN_REGRESSION_METRIC,
     DEFAULT_TRAIN_TIME_LIMIT,
     EvaDB_INSTALLATION_DIR,
 )
@@ -38,10 +39,13 @@ from evadb.utils.errors import FunctionIODefinitionError
 from evadb.utils.generic_utils import (
     load_function_class_from_file,
     string_comparison_case_insensitive,
-    try_to_import_forecast,
     try_to_import_ludwig,
+    try_to_import_neuralforecast,
+    try_to_import_sklearn,
+    try_to_import_statsforecast,
     try_to_import_torch,
     try_to_import_ultralytics,
+    try_to_import_xgboost,
 )
 from evadb.utils.logging_manager import logger
 
@@ -117,6 +121,109 @@ class CreateFunctionExecutor(AbstractExecutor):
             self.node.metadata,
         )
 
+    def handle_sklearn_function(self):
+        """Handle sklearn functions
+
+        Use Sklearn's regression to train models.
+        """
+        try_to_import_sklearn()
+        from sklearn.linear_model import LinearRegression
+
+        assert (
+            len(self.children) == 1
+        ), "Create sklearn function expects 1 child, finds {}.".format(
+            len(self.children)
+        )
+
+        aggregated_batch_list = []
+        child = self.children[0]
+        for batch in child.exec():
+            aggregated_batch_list.append(batch)
+        aggregated_batch = Batch.concat(aggregated_batch_list, copy=False)
+        aggregated_batch.drop_column_alias()
+
+        arg_map = {arg.key: arg.value for arg in self.node.metadata}
+        model = LinearRegression()
+        Y = aggregated_batch.frames[arg_map["predict"]]
+        aggregated_batch.frames.drop([arg_map["predict"]], axis=1, inplace=True)
+        model.fit(X=aggregated_batch.frames, y=Y)
+        model_path = os.path.join(
+            self.db.config.get_value("storage", "model_dir"), self.node.name
+        )
+        pickle.dump(model, open(model_path, "wb"))
+        self.node.metadata.append(
+            FunctionMetadataCatalogEntry("model_path", model_path)
+        )
+        # Pass the prediction column name to sklearn.py
+        self.node.metadata.append(
+            FunctionMetadataCatalogEntry("predict_col", arg_map["predict"])
+        )
+
+        impl_path = Path(f"{self.function_dir}/sklearn.py").absolute().as_posix()
+        io_list = self._resolve_function_io(None)
+        return (
+            self.node.name,
+            impl_path,
+            self.node.function_type,
+            io_list,
+            self.node.metadata,
+        )
+
+    def handle_xgboost_function(self):
+        """Handle xgboost functions
+
+        We use the Flaml AutoML model for training xgboost models.
+        """
+        try_to_import_xgboost()
+
+        assert (
+            len(self.children) == 1
+        ), "Create sklearn function expects 1 child, finds {}.".format(
+            len(self.children)
+        )
+
+        aggregated_batch_list = []
+        child = self.children[0]
+        for batch in child.exec():
+            aggregated_batch_list.append(batch)
+        aggregated_batch = Batch.concat(aggregated_batch_list, copy=False)
+        aggregated_batch.drop_column_alias()
+
+        arg_map = {arg.key: arg.value for arg in self.node.metadata}
+        from flaml import AutoML
+
+        model = AutoML()
+        settings = {
+            "time_budget": arg_map.get("time_limit", DEFAULT_TRAIN_TIME_LIMIT),
+            "metric": arg_map.get("metric", DEFAULT_TRAIN_REGRESSION_METRIC),
+            "estimator_list": ["xgboost"],
+            "task": "regression",
+        }
+        model.fit(
+            dataframe=aggregated_batch.frames, label=arg_map["predict"], **settings
+        )
+        model_path = os.path.join(
+            self.db.config.get_value("storage", "model_dir"), self.node.name
+        )
+        pickle.dump(model, open(model_path, "wb"))
+        self.node.metadata.append(
+            FunctionMetadataCatalogEntry("model_path", model_path)
+        )
+        # Pass the prediction column to xgboost.py.
+        self.node.metadata.append(
+            FunctionMetadataCatalogEntry("predict_col", arg_map["predict"])
+        )
+
+        impl_path = Path(f"{self.function_dir}/xgboost.py").absolute().as_posix()
+        io_list = self._resolve_function_io(None)
+        return (
+            self.node.name,
+            impl_path,
+            self.node.function_type,
+            io_list,
+            self.node.metadata,
+        )
+
     def handle_ultralytics_function(self):
         """Handle Ultralytics functions"""
         try_to_import_ultralytics()
@@ -138,6 +245,7 @@ class CreateFunctionExecutor(AbstractExecutor):
 
     def handle_forecasting_function(self):
         """Handle forecasting functions"""
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
         aggregated_batch_list = []
         child = self.children[0]
         for batch in child.exec():
@@ -150,14 +258,34 @@ class CreateFunctionExecutor(AbstractExecutor):
             impl_path = Path(f"{self.function_dir}/forecast.py").absolute().as_posix()
         else:
             impl_path = self.node.impl_path.absolute().as_posix()
+        library = "statsforecast"
+        supported_libraries = ["statsforecast", "neuralforecast"]
 
-        if "model" not in arg_map.keys():
-            arg_map["model"] = "AutoARIMA"
+        if "horizon" not in arg_map.keys():
+            raise ValueError(
+                "Horizon must be provided while creating function of type FORECASTING"
+            )
+        try:
+            horizon = int(arg_map["horizon"])
+        except Exception as e:
+            err_msg = f"{str(e)}. HORIZON must be integral."
+            logger.error(err_msg)
+            raise FunctionIODefinitionError(err_msg)
 
-        model_name = arg_map["model"]
+        if "library" in arg_map.keys():
+            try:
+                assert arg_map["library"].lower() in supported_libraries
+            except Exception:
+                err_msg = (
+                    "EvaDB currently supports " + str(supported_libraries) + " only."
+                )
+                logger.error(err_msg)
+                raise FunctionIODefinitionError(err_msg)
+
+            library = arg_map["library"].lower()
 
         """
-        The following rename is needed for statsforecast, which requires the column name to be the following:
+        The following rename is needed for statsforecast/neuralforecast, which requires the column name to be the following:
         - The unique_id (string, int or category) represents an identifier for the series.
         - The ds (datestamp) column should be of a format expected by Pandas, ideally YYYY-MM-DD for a date or YYYY-MM-DD HH:MM:SS for a timestamp.
         - The y (numeric) represents the measurement we wish to forecast.
@@ -176,24 +304,17 @@ class CreateFunctionExecutor(AbstractExecutor):
         if "ds" not in list(data.columns):
             data["ds"] = [x + 1 for x in range(len(data))]
 
-        if "frequency" not in arg_map.keys():
+        """
+            Set or infer data frequency
+        """
+
+        if "frequency" not in arg_map.keys() or arg_map["frequency"] == "auto":
             arg_map["frequency"] = pd.infer_freq(data["ds"])
         frequency = arg_map["frequency"]
         if frequency is None:
             raise RuntimeError(
-                f"Can not infer the frequency for {self.node.name}. Please explictly set it."
+                f"Can not infer the frequency for {self.node.name}. Please explicitly set it."
             )
-
-        try_to_import_forecast()
-        from statsforecast import StatsForecast
-        from statsforecast.models import AutoARIMA, AutoCES, AutoETS, AutoTheta
-
-        model_dict = {
-            "AutoARIMA": AutoARIMA,
-            "AutoCES": AutoCES,
-            "AutoETS": AutoETS,
-            "AutoTheta": AutoTheta,
-        }
 
         season_dict = {  # https://pandas.pydata.org/docs/user_guide/timeseries.html#timeseries-offset-aliases
             "H": 24,
@@ -210,32 +331,144 @@ class CreateFunctionExecutor(AbstractExecutor):
             frequency.split("-")[0] if "-" in frequency else frequency
         )  # shortens longer frequencies like Q-DEC
         season_length = season_dict[new_freq] if new_freq in season_dict else 1
-        model = StatsForecast(
-            [model_dict[model_name](season_length=season_length)], freq=new_freq
-        )
+
+        """
+            Neuralforecast implementation
+        """
+        if library == "neuralforecast":
+            try_to_import_neuralforecast()
+            from neuralforecast import NeuralForecast
+            from neuralforecast.auto import AutoNBEATS, AutoNHITS
+            from neuralforecast.models import NBEATS, NHITS
+
+            model_dict = {
+                "AutoNBEATS": AutoNBEATS,
+                "AutoNHITS": AutoNHITS,
+                "NBEATS": NBEATS,
+                "NHITS": NHITS,
+            }
+
+            if "model" not in arg_map.keys():
+                arg_map["model"] = "NBEATS"
+
+            if "auto" not in arg_map.keys() or (
+                arg_map["auto"].lower()[0] == "t"
+                and "auto" not in arg_map["model"].lower()
+            ):
+                arg_map["model"] = "Auto" + arg_map["model"]
+
+            try:
+                model_here = model_dict[arg_map["model"]]
+            except Exception:
+                err_msg = "Supported models: " + str(model_dict.keys())
+                logger.error(err_msg)
+                raise FunctionIODefinitionError(err_msg)
+            model_args = {}
+
+            if "auto" not in arg_map["model"].lower():
+                model_args["input_size"] = 2 * horizon
+                model_args["early_stop_patience_steps"] = 20
+            else:
+                model_args["config"] = {
+                    "input_size": 2 * horizon,
+                    "early_stop_patience_steps": 20,
+                }
+
+            if len(data.columns) >= 4:
+                exogenous_columns = [
+                    x for x in list(data.columns) if x not in ["ds", "y", "unique_id"]
+                ]
+                if "auto" not in arg_map["model"].lower():
+                    model_args["hist_exog_list"] = exogenous_columns
+                else:
+                    model_args["config"]["hist_exog_list"] = exogenous_columns
+
+            model_args["h"] = horizon
+
+            model = NeuralForecast(
+                [model_here(**model_args)],
+                freq=new_freq,
+            )
+
+        # """
+        #     Statsforecast implementation
+        # """
+        else:
+            if "auto" in arg_map.keys() and arg_map["auto"].lower()[0] != "t":
+                raise RuntimeError(
+                    "Statsforecast implementation only supports automatic hyperparameter optimization. Please set AUTO to true."
+                )
+            try_to_import_statsforecast()
+            from statsforecast import StatsForecast
+            from statsforecast.models import AutoARIMA, AutoCES, AutoETS, AutoTheta
+
+            model_dict = {
+                "AutoARIMA": AutoARIMA,
+                "AutoCES": AutoCES,
+                "AutoETS": AutoETS,
+                "AutoTheta": AutoTheta,
+            }
+
+            if "model" not in arg_map.keys():
+                arg_map["model"] = "ARIMA"
+
+            if "auto" not in arg_map["model"].lower():
+                arg_map["model"] = "Auto" + arg_map["model"]
+
+            try:
+                model_here = model_dict[arg_map["model"]]
+            except Exception:
+                err_msg = "Supported models: " + str(model_dict.keys())
+                logger.error(err_msg)
+                raise FunctionIODefinitionError(err_msg)
+
+            model = StatsForecast(
+                [model_here(season_length=season_length)], freq=new_freq
+            )
+
+        data["ds"] = pd.to_datetime(data["ds"])
+
+        model_save_dir_name = library + "_" + arg_map["model"] + "_" + new_freq
+        if len(data.columns) >= 4 and library == "neuralforecast":
+            model_save_dir_name += "_exogenous_" + str(sorted(exogenous_columns))
 
         model_dir = os.path.join(
-            self.db.config.get_value("storage", "model_dir"), self.node.name
+            self.db.config.get_value("storage", "model_dir"),
+            "tsforecasting",
+            model_save_dir_name,
+            str(hashlib.sha256(data.to_string().encode()).hexdigest()),
         )
         Path(model_dir).mkdir(parents=True, exist_ok=True)
-        model_path = os.path.join(
-            self.db.config.get_value("storage", "model_dir"),
-            self.node.name,
-            str(hashlib.sha256(data.to_string().encode()).hexdigest()) + ".pkl",
-        )
 
-        weight_file = Path(model_path)
-        data["ds"] = pd.to_datetime(data["ds"])
-        if not weight_file.exists():
-            model.fit(data)
+        model_save_name = "horizon" + str(horizon) + ".pkl"
+
+        model_path = os.path.join(model_dir, model_save_name)
+
+        existing_model_files = sorted(
+            os.listdir(model_dir),
+            key=lambda x: int(x.split("horizon")[1].split(".pkl")[0]),
+        )
+        existing_model_files = [
+            x
+            for x in existing_model_files
+            if int(x.split("horizon")[1].split(".pkl")[0]) >= horizon
+        ]
+        if len(existing_model_files) == 0:
+            logger.info("Training, please wait...")
+            if library == "neuralforecast":
+                model.fit(df=data, val_size=horizon)
+            else:
+                model.fit(df=data[["ds", "y", "unique_id"]])
             f = open(model_path, "wb")
             pickle.dump(model, f)
             f.close()
+        elif not Path(model_path).exists():
+            model_path = os.path.join(model_dir, existing_model_files[-1])
 
         io_list = self._resolve_function_io(None)
 
         metadata_here = [
-            FunctionMetadataCatalogEntry("model_name", model_name),
+            FunctionMetadataCatalogEntry("model_name", arg_map["model"]),
             FunctionMetadataCatalogEntry("model_path", model_path),
             FunctionMetadataCatalogEntry(
                 "predict_column_rename", arg_map.get("predict", "y")
@@ -246,7 +479,11 @@ class CreateFunctionExecutor(AbstractExecutor):
             FunctionMetadataCatalogEntry(
                 "id_column_rename", arg_map.get("id", "unique_id")
             ),
+            FunctionMetadataCatalogEntry("horizon", horizon),
+            FunctionMetadataCatalogEntry("library", library),
         ]
+
+        os.environ.pop("CUDA_VISIBLE_DEVICES", None)
 
         return (
             self.node.name,
@@ -295,9 +532,9 @@ class CreateFunctionExecutor(AbstractExecutor):
                 # We use DropObjectExecutor to avoid bookkeeping the code. The drop function should be moved to catalog.
                 from evadb.executor.drop_object_executor import DropObjectExecutor
 
-                drop_exectuor = DropObjectExecutor(self.db, None)
+                drop_executor = DropObjectExecutor(self.db, None)
                 try:
-                    drop_exectuor._handle_drop_function(self.node.name, if_exists=False)
+                    drop_executor._handle_drop_function(self.node.name, if_exists=False)
                 except RuntimeError:
                     pass
                 else:
@@ -332,6 +569,22 @@ class CreateFunctionExecutor(AbstractExecutor):
                 io_list,
                 metadata,
             ) = self.handle_ludwig_function()
+        elif string_comparison_case_insensitive(self.node.function_type, "Sklearn"):
+            (
+                name,
+                impl_path,
+                function_type,
+                io_list,
+                metadata,
+            ) = self.handle_sklearn_function()
+        elif string_comparison_case_insensitive(self.node.function_type, "XGBoost"):
+            (
+                name,
+                impl_path,
+                function_type,
+                io_list,
+                metadata,
+            ) = self.handle_xgboost_function()
         elif string_comparison_case_insensitive(self.node.function_type, "Forecasting"):
             (
                 name,
@@ -382,7 +635,7 @@ class CreateFunctionExecutor(AbstractExecutor):
             # initializing the function class calls the setup method internally
             function(**function_args)
         except Exception as e:
-            err_msg = f"Error creating function: {str(e)}"
+            err_msg = f"Error creating function {self.node.name}: {str(e)}"
             # logger.error(err_msg)
             raise RuntimeError(err_msg)
 

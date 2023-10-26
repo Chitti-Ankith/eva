@@ -30,13 +30,9 @@ from evadb.binder.binder_utils import (
     resolve_alias_table_value_expression,
 )
 from evadb.binder.statement_binder_context import StatementBinderContext
-from evadb.catalog.catalog_type import (
-    ColumnType,
-    NdArrayType,
-    TableType,
-    VideoColumnName,
-)
+from evadb.catalog.catalog_type import ColumnType, TableType
 from evadb.catalog.catalog_utils import get_metadata_properties, is_document_table
+from evadb.catalog.sql_config import RESTRICTED_COL_NAMES
 from evadb.configuration.constants import EvaDB_INSTALLATION_DIR
 from evadb.expression.abstract_expression import AbstractExpression, ExpressionType
 from evadb.expression.function_expression import FunctionExpression
@@ -106,6 +102,19 @@ class StatementBinder:
                         outputs.append(column)
                     else:
                         inputs.append(column)
+            elif string_comparison_case_insensitive(
+                node.function_type, "sklearn"
+            ) or string_comparison_case_insensitive(node.function_type, "XGBoost"):
+                assert (
+                    "predict" in arg_map
+                ), f"Creating {node.function_type} functions expects 'predict' metadata."
+                # We only support a single predict column for now
+                predict_columns = set([arg_map["predict"]])
+                for column in all_column_list:
+                    if column.name in predict_columns:
+                        outputs.append(column)
+                    else:
+                        inputs.append(column)
             elif string_comparison_case_insensitive(node.function_type, "forecasting"):
                 # Forecasting models have only one input column which is horizon
                 inputs = [ColumnDefinition("horizon", ColumnType.INTEGER, None, None)]
@@ -120,10 +129,6 @@ class StatementBinder:
                     elif column.name == arg_map.get("predict", "y"):
                         outputs.append(column)
                         required_columns.remove(column.name)
-                    else:
-                        raise BinderError(
-                            f"Unexpected column {column.name} found for forecasting function."
-                        )
                 assert (
                     len(required_columns) == 0
                 ), f"Missing required {required_columns} columns for forecasting function."
@@ -135,50 +140,6 @@ class StatementBinder:
                 len(node.inputs) == 0 and len(node.outputs) == 0
             ), f"{node.function_type} functions' input and output are auto assigned"
             node.inputs, node.outputs = inputs, outputs
-
-    @bind.register(CreateIndexStatement)
-    def _bind_create_index_statement(self, node: CreateIndexStatement):
-        self.bind(node.table_ref)
-        if node.function:
-            self.bind(node.function)
-
-        # TODO: create index currently only supports single numpy column.
-        assert len(node.col_list) == 1, "Index cannot be created on more than 1 column"
-
-        # TODO: create index currently only works on TableInfo, but will extend later.
-        assert node.table_ref.is_table_atom(), "Index can only be created on Tableinfo"
-        if not node.function:
-            # Feature table type needs to be float32 numpy array.
-            assert (
-                len(node.col_list) == 1
-            ), f"Index can be only created on one column, but instead {len(node.col_list)} are provided"
-            col_def = node.col_list[0]
-
-            table_ref_obj = node.table_ref.table.table_obj
-            col_list = [
-                col for col in table_ref_obj.columns if col.name == col_def.name
-            ]
-            assert (
-                len(col_list) == 1
-            ), f"Index is created on non-existent column {col_def.name}"
-
-            col = col_list[0]
-            assert (
-                col.array_type == NdArrayType.FLOAT32
-            ), "Index input needs to be float32."
-            assert len(col.array_dimensions) == 2
-        else:
-            # Output of the function should be 2 dimension and float32 type.
-            function_obj = self._catalog().get_function_catalog_entry_by_name(
-                node.function.name
-            )
-            for output in function_obj.outputs:
-                assert (
-                    output.array_type == NdArrayType.FLOAT32
-                ), "Index input needs to be float32."
-                assert (
-                    len(output.array_dimensions) == 2
-                ), "Index input needs to be 2 dimensional."
 
     @bind.register(SelectStatement)
     def _bind_select_statement(self, node: SelectStatement):
@@ -243,12 +204,27 @@ class StatementBinder:
 
     @bind.register(CreateTableStatement)
     def _bind_create_statement(self, node: CreateTableStatement):
+        # we don't allow certain keywords in the column_names
+        for col in node.column_list:
+            assert (
+                col.name.lower() not in RESTRICTED_COL_NAMES
+            ), f"EvaDB does not allow to create a table with column name {col.name}"
+
         if node.query is not None:
             self.bind(node.query)
 
             node.column_list = get_column_definition_from_select_target_list(
                 node.query.target_list
             )
+
+            # verify if the table to be created is valid.
+            # possible issues: the native database does not exists.
+
+    @bind.register(CreateIndexStatement)
+    def _bind_create_index_statement(self, node: CreateIndexStatement):
+        from evadb.binder.create_index_statement_binder import bind_create_index
+
+        bind_create_index(self, node)
 
     @bind.register(RenameTableStatement)
     def _bind_rename_table_statement(self, node: RenameTableStatement):
@@ -291,16 +267,9 @@ class StatementBinder:
 
     @bind.register(TupleValueExpression)
     def _bind_tuple_expr(self, node: TupleValueExpression):
-        table_alias, col_obj = self._binder_context.get_binded_column(
-            node.name, node.table_alias
-        )
-        node.table_alias = table_alias
-        if node.name == VideoColumnName.audio:
-            self._binder_context.enable_audio_retrieval()
-        if node.name == VideoColumnName.data:
-            self._binder_context.enable_video_retrieval()
-        node.col_alias = "{}.{}".format(table_alias, node.name.lower())
-        node.col_object = col_obj
+        from evadb.binder.tuple_value_expression_binder import bind_tuple_expr
+
+        bind_tuple_expr(self, node)
 
     @bind.register(FunctionExpression)
     def _bind_func_expr(self, node: FunctionExpression):

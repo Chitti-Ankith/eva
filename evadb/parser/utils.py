@@ -21,13 +21,18 @@ from evadb.parser.load_statement import LoadDataStatement
 from evadb.parser.parser import Parser
 from evadb.parser.rename_statement import RenameTableStatement
 from evadb.parser.select_statement import SelectStatement
+from evadb.parser.set_statement import SetStatement
 from evadb.parser.show_statement import ShowStatement
 from evadb.parser.types import ObjectType
 from evadb.parser.use_statement import UseStatement
 
 # List of statements for which we omit binder and optimizer and pass the statement
 # directly to the executor.
-SKIP_BINDER_AND_OPTIMIZER_STATEMENTS = (CreateDatabaseStatement, UseStatement)
+SKIP_BINDER_AND_OPTIMIZER_STATEMENTS = (
+    CreateDatabaseStatement,
+    UseStatement,
+    SetStatement,
+)
 
 
 def parse_expression(expr: str):
@@ -46,9 +51,9 @@ def parse_predicate_expression(expr: str):
 
 def parse_table_clause(expr: str, chunk_size: int = None, chunk_overlap: int = None):
     mock_query_parts = [f"SELECT * FROM {expr}"]
-    if chunk_size:
+    if chunk_size is not None:
         mock_query_parts.append(f"CHUNK_SIZE {chunk_size}")
-    if chunk_overlap:
+    if chunk_overlap is not None:
         mock_query_parts.append(f"CHUNK_OVERLAP {chunk_overlap}")
     mock_query_parts.append(";")
     mock_query = " ".join(mock_query_parts)

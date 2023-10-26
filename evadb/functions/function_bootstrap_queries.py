@@ -49,6 +49,20 @@ DummyFeatureExtractor_function_query = """CREATE FUNCTION
     EvaDB_INSTALLATION_DIR
 )
 
+DummyNoInputFunction_function_query = """CREATE FUNCTION
+                  IF NOT EXISTS DummyNoInputFunction
+                  IMPL '{}/../test/util.py';
+        """.format(
+    EvaDB_INSTALLATION_DIR
+)
+
+DummyLLM_function_query = """CREATE FUNCTION
+                  IF NOT EXISTS DummyLLM
+                  IMPL '{}/../test/util.py';
+        """.format(
+    EvaDB_INSTALLATION_DIR
+)
+
 fuzzy_function_query = """CREATE FUNCTION IF NOT EXISTS FuzzDistance
                     INPUT (Input_Array1 NDARRAY ANYTYPE, Input_Array2 NDARRAY ANYTYPE)
                     OUTPUT (distance FLOAT(32, 7))
@@ -188,6 +202,18 @@ yolo8n_query = """CREATE FUNCTION IF NOT EXISTS Yolo
             MODEL 'yolov8n.pt';
         """
 
+stablediffusion_function_query = """CREATE FUNCTION IF NOT EXISTS StableDiffusion
+        IMPL '{}/functions/stable_diffusion.py';
+        """.format(
+    EvaDB_INSTALLATION_DIR
+)
+
+dalle_function_query = """CREATE FUNCTION IF NOT EXISTS DallE
+        IMPL '{}/functions/dalle.py';
+        """.format(
+    EvaDB_INSTALLATION_DIR
+)
+
 
 def init_builtin_functions(db: EvaDBDatabase, mode: str = "debug") -> None:
     """Load the built-in functions into the system during system bootstrapping.
@@ -197,7 +223,7 @@ def init_builtin_functions(db: EvaDBDatabase, mode: str = "debug") -> None:
     In 'release' mode, only release functions are loaded. In addition, in 'debug' mode,
     the function loads a smaller model to accelerate the test suite time.
 
-    Args:
+    Args:G
         mode (str, optional): The mode for loading functions, either 'debug' or 'release'.
         Defaults to 'debug'.
 
@@ -233,6 +259,8 @@ def init_builtin_functions(db: EvaDBDatabase, mode: str = "debug") -> None:
         # Mvit_function_query,
         Sift_function_query,
         Yolo_function_query,
+        stablediffusion_function_query,
+        dalle_function_query,
     ]
 
     # if mode is 'debug', add debug functions
@@ -242,6 +270,8 @@ def init_builtin_functions(db: EvaDBDatabase, mode: str = "debug") -> None:
                 DummyObjectDetector_function_query,
                 DummyMultiObjectDetector_function_query,
                 DummyFeatureExtractor_function_query,
+                DummyNoInputFunction_function_query,
+                DummyLLM_function_query,
             ]
         )
 
@@ -250,7 +280,7 @@ def init_builtin_functions(db: EvaDBDatabase, mode: str = "debug") -> None:
     for query in queries:
         try:
             execute_query_fetch_all(
-                db, query, do_not_print_exceptions=True, do_not_raise_exceptions=True
+                db, query, do_not_print_exceptions=False, do_not_raise_exceptions=True
             )
         except Exception:
             pass

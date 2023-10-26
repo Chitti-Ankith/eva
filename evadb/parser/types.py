@@ -41,6 +41,7 @@ class StatementType(EvaDBEnum):
     CREATE_INDEX  # noqa: F821
     CREATE_DATABASE  # noqa: F821
     USE  # noqa: F821
+    SET  # noqa: F821
     # add other types
 
 
@@ -69,6 +70,8 @@ class FileFormatType(EvaDBEnum):
 class ShowType(EvaDBEnum):
     FUNCTIONS  # noqa: F821
     TABLES  # noqa: F821
+    CONFIG  # noqa: F821
+    DATABASES  # noqa: F821
 
 
 class FunctionType(EvaDBEnum):
